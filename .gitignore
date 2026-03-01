@@ -1,0 +1,7 @@
+.venv/
+__pycache__/
+.env
+*.pyc
+.idea/
+nohup.out
+technical_review.md
