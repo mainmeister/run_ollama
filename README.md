@@ -41,6 +41,7 @@ A Python-based CLI utility that acts as a personal technical journalist: it dige
     ```
     MASTODON_BASE_URL=https://your.mastodon.instance
     MASTODON_ACCESS_TOKEN=your_access_token_here
+    # Optional: MASTODON_VISIBILITY=public
     # Optional: OLLAMA_HOST=http://remote.host:11434
     # Optional: DISABLE_CLIPBOARD=true
     ```
@@ -60,9 +61,10 @@ A Python-based CLI utility that acts as a personal technical journalist: it dige
 ## Privacy & Security
 
 - **Local Processing:** Your web content and prompts are processed by your own Ollama instance. By default, this is a local server, meaning no data leaves your machine. However, if you configure a remote `OLLAMA_HOST`, your data will travel over the network to that server.
-- **SSRF Awareness:** The application includes built-in protection and awareness for Server-Side Request Forgery (SSRF). It resolves hostnames to IP addresses and will warn you (requiring confirmation) before fetching content from private, reserved, or loopback network ranges (e.g., your local router or local services).
+- **SSRF Awareness:** The application includes built-in protection and awareness for Server-Side Request Forgery (SSRF). It resolves hostnames to all possible IP addresses (including IPv6) and will warn you (requiring confirmation) before fetching content from private, reserved, or loopback network ranges (e.g., your local router or local services).
+- **Prompt Injection Mitigation:** For added security, the tool uses unique delimiters (`[WEBPAGE CONTENT START/END]`) and strict instructions to prevent untrusted webpage content from overriding the system's journalistic persona.
 - **Download Limits:** To prevent resource exhaustion, the tool only downloads up to 1MB of content from any provided URL.
-- **Privacy Controls:** Clipboard copying is enabled by default for convenience but can be disabled via the `DISABLE_CLIPBOARD` environment variable or the `--no-clipboard` CLI flag.
+- **Privacy Controls:** Clipboard copying and Mastodon post visibility are configurable via environment variables (`DISABLE_CLIPBOARD`, `MASTODON_VISIBILITY`) or CLI flags, putting the user in control of their data.
 - **Environment Safety:** The application includes a built-in check to warn you if your `.env` file containing credentials is being tracked by Git, helping you avoid accidental leaks.
 - **Limited Access:** For maximum security, use a Mastodon "App" token with limited scopes (`write:statuses` only) rather than a full-access token. This ensures the application can only post updates and cannot access your private messages or account settings.
 - **Dependency Security:** The project uses pinned dependency versions and is regularly audited for known vulnerabilities (e.g., via `pip-audit`) to ensure a secure and stable environment for the user.
