@@ -134,7 +134,7 @@ def get_ollama_models() -> List[Tuple[str, str]]:
         models = []
         for m in sorted_models:
             name = m.get('model', 'Unknown')
-            size = humanize.intword(m.get('size', 0))
+            size = humanize.naturalsize(m.get('size', 0))
             models.append((name, size))
             
         return models
