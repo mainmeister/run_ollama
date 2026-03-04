@@ -147,7 +147,7 @@ def clean_model_response(text: str) -> str:
 
     return s
 
-def get_ollama_models() -> List[Tuple[str, str]]:
+def get_ollama_models() -> List[Tuple[str, str, bool]]:
     """Fetches and sorts available Ollama models by size."""
     try:
         response = ollama.list()
@@ -158,7 +158,17 @@ def get_ollama_models() -> List[Tuple[str, str]]:
         for m in sorted_models:
             name = m.get('model', 'Unknown')
             size = humanize.naturalsize(m.get('size', 0))
-            models.append((name, size))
+            
+            # Check for thinking capability
+            try:
+                info = ollama.show(name)
+                # Capabilities might be in show() response for newer Ollama versions
+                capabilities = getattr(info, 'capabilities', [])
+                is_thinking = 'thinking' in (capabilities or [])
+            except Exception:
+                is_thinking = False
+                
+            models.append((name, size, is_thinking))
             
         return models
     except Exception:
@@ -318,15 +328,17 @@ def run_chat(no_clipboard: bool = False):
             default_index = len(models) - 1
 
         # Determine column widths
-        name_width = max((len(n) for n, _ in models), default=0)
-        size_width = max((len(s) for _, s in models), default=0)
-        line_width = 22 + name_width + size_width
+        name_width = max((len(n) for n, _, _ in models), default=0)
+        size_width = max((len(s) for _, s, _ in models), default=0)
+        think_width = 8 # "Thinking" is 8 characters.
+        line_width = 32 + name_width + size_width + think_width
 
         print("\n" + "-" * line_width)
         print("Available Models:")
         print("-" * line_width)
-        for i, (name, size) in enumerate(models):
-            print(f"{i:2d}. Model: {name:<{name_width}} | Size: {size:>{size_width}}")
+        for i, (name, size, is_thinking) in enumerate(models):
+            think_str = "Yes" if is_thinking else "No"
+            print(f"{i:2d}. Model: {name:<{name_width}} | Size: {size:>{size_width}} | Thinking: {think_str:<{think_width}}")
         print("-" * line_width)
 
         choice = input(f"Select model index [Default: {default_index}] (or 'q' to quit, 'r' to refresh): ").strip().lower()
