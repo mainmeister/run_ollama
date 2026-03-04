@@ -10,11 +10,17 @@ import pyperclip
 import requests
 from bs4 import BeautifulSoup
 from typing import List, Tuple, Optional
+from urllib.parse import urljoin, urlparse
 from dotenv import load_dotenv
 from mastodon import Mastodon, MastodonNetworkError, MastodonUnauthorizedError
 
 # Load environment variables from .env file
 load_dotenv()
+
+def strip_ansi(text: str) -> str:
+    """Removes ANSI escape sequences from text to prevent terminal injection."""
+    ansi_escape = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
+    return ansi_escape.sub('', text)
 
 def check_dotenv_tracking():
     """Security check: ensures .env is not tracked by git."""
@@ -33,7 +39,17 @@ def check_dotenv_tracking():
                 print("This can leak your Mastodon credentials to GitHub.")
                 print("To fix this, run: git rm --cached .env")
                 print("!" * 50 + "\n")
-        except (subprocess.SubprocessError, FileNotFoundError):
+
+            # Check .gitignore
+            if os.path.exists(".gitignore"):
+                with open(".gitignore", "r") as f:
+                    content = f.read()
+                    if ".env" not in content:
+                        print("\n" + "!" * 50)
+                        print("SECURITY WARNING: .env file is not in .gitignore!")
+                        print("Add it to prevent accidental commits.")
+                        print("!" * 50 + "\n")
+        except (subprocess.SubprocessError, FileNotFoundError, IOError):
             # Git not installed or not a git repo, skip check
             pass
 
@@ -104,13 +120,14 @@ def is_private_url(url: str) -> bool:
 
 def clean_model_response(text: str) -> str:
     """Cleans model output by removing unwanted leading labels like 'TLDR:' and wrapping quotes.
+    - Strips ANSI escape sequences.
     - Strips surrounding single/double quotes if the whole text is quoted.
     - Removes common TLDR-style prefixes at the very start (case-insensitive).
     """
     if not text:
         return text
 
-    s = text.strip()
+    s = strip_ansi(text).strip()
 
     # Remove wrapping quotes repeatedly if the entire string is quoted
     while len(s) >= 2 and (
@@ -163,43 +180,65 @@ def is_url(text: str) -> bool:
 
 def fetch_url_content(url: str) -> Optional[str]:
     """Fetches and extracts text content from a webpage.
-    Includes warning for private IPs and strict download size limits.
+    Includes manual redirect following for SSRF protection and download size limits.
     """
-    if is_private_url(url):
-        print("\n" + "!" * 50)
-        print("SECURITY WARNING: URL points to a local or private IP.")
-        print(f"Target: {url}")
-        print("Scraped content from your internal network will be sent to the LLM.")
-        print("!" * 50)
-        confirm = input("Proceed anyway? (y/N): ").strip().lower()
-        if confirm != 'y':
-            return None
+    current_url = url
+    max_redirects = 5
+    redirect_count = 0
+    
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+    }
 
     try:
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-        }
-        
-        # Use stream=True to check content size during download
-        response = requests.get(url, timeout=10, headers=headers, stream=True)
-        response.raise_for_status()
+        while redirect_count <= max_redirects:
+            if is_private_url(current_url):
+                print("\n" + "!" * 50)
+                print("SECURITY WARNING: URL points to a local or private IP.")
+                print(f"Target: {current_url}")
+                print("Scraped content from your internal network will be sent to the LLM.")
+                print("!" * 50)
+                confirm = input("Proceed anyway? (y/N): ").strip().lower()
+                if confirm != 'y':
+                    return None
+
+            # Use stream=True to check content size during download
+            # and allow_redirects=False to check for SSRF at each step
+            response = requests.get(current_url, timeout=10, headers=headers, stream=True, allow_redirects=False)
+            
+            if 300 <= response.status_code < 400 and 'Location' in response.headers:
+                location = response.headers['Location']
+                response.close()
+                current_url = urljoin(current_url, location)
+                redirect_count += 1
+                continue
+            
+            response.raise_for_status()
+            break
+        else:
+            print("Error: Too many redirects.")
+            return None
 
         # Check content-length header if present
         cl = response.headers.get('content-length')
         if cl and int(cl) > MAX_FETCH_BYTES:
             print(f"Error: URL content is too large ({humanize.naturalsize(int(cl))}).")
+            response.close()
             return None
 
         # Download content in chunks with a hard limit on raw bytes
         raw_content = bytearray()
         total_bytes = 0
-        for chunk in response.iter_content(chunk_size=8192):
-            if chunk:
-                total_bytes += len(chunk)
-                if total_bytes > MAX_FETCH_BYTES:
-                    print(f"Error: URL content exceeded {humanize.naturalsize(MAX_FETCH_BYTES)} limit.")
-                    return None
-                raw_content.extend(chunk)
+        try:
+            for chunk in response.iter_content(chunk_size=8192):
+                if chunk:
+                    total_bytes += len(chunk)
+                    if total_bytes > MAX_FETCH_BYTES:
+                        print(f"Error: URL content exceeded {humanize.naturalsize(MAX_FETCH_BYTES)} limit.")
+                        return None
+                    raw_content.extend(chunk)
+        finally:
+            response.close()
 
         # Decode the gathered bytes
         # Try to use the encoding from the response, default to utf-8
