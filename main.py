@@ -219,7 +219,24 @@ def fetch_url_content(url: str) -> Optional[str]:
         print(f"Error fetching URL: {e}")
         return None
 
-def run_chat():
+def copy_to_clipboard(content: str, is_new: bool = False, disabled_flag: bool = False) -> None:
+    """Copies content to clipboard unless disabled by flag or environment variable."""
+    if disabled_flag or os.getenv("DISABLE_CLIPBOARD", "").lower() in ("true", "1", "yes"):
+        if disabled_flag:
+            print("(Clipboard copy disabled via CLI flag)")
+        else:
+            print("(Clipboard copy disabled via environment)")
+        return
+
+    try:
+        pyperclip.copy(content)
+        msg = "(New response copied to clipboard)" if is_new else "(Response copied to clipboard)"
+        print(msg)
+    except Exception:
+        if not is_new:
+            print("(Warning: Could not copy to clipboard)")
+
+def run_chat(no_clipboard: bool = False):
     """Main application loop."""
     models = get_ollama_models()
     
@@ -332,15 +349,7 @@ def run_chat():
             
             # Since it was streamed, we don't need to print the whole thing again
             # but we can notify about the clipboard.
-            
-            if os.getenv("DISABLE_CLIPBOARD", "").lower() not in ("true", "1", "yes"):
-                try:
-                    pyperclip.copy(content)
-                    print("(Response copied to clipboard)")
-                except Exception:
-                    print("(Warning: Could not copy to clipboard)")
-            else:
-                print("(Clipboard copy disabled via environment)")
+            copy_to_clipboard(content, disabled_flag=no_clipboard)
 
             # Mastodon Posting Logic
             if not source_url:
@@ -404,13 +413,7 @@ def run_chat():
                         content = clean_model_response(content)
                         
                         # No need to print "New Response:" again as it was streamed
-                        
-                        if os.getenv("DISABLE_CLIPBOARD", "").lower() not in ("true", "1", "yes"):
-                            try:
-                                pyperclip.copy(content)
-                                print("(New response copied to clipboard)")
-                            except Exception:
-                                pass
+                        copy_to_clipboard(content, is_new=True, disabled_flag=no_clipboard)
                             
                         # Continue to next iteration to re-check length
                         continue
@@ -471,8 +474,13 @@ def post_to_mastodon(content: str, url: str) -> None:
         print("Error: Failed to post to Mastodon. Check your credentials and connection.")
 
 if __name__ == "__main__":
+    import argparse
+    parser = argparse.ArgumentParser(description="run_ollama: A personal technical journalist for web content.")
+    parser.add_argument("--no-clipboard", action="store_true", help="Disable automatic clipboard copying.")
+    args = parser.parse_args()
+    
     try:
-        run_chat()
+        run_chat(no_clipboard=args.no_clipboard)
     except KeyboardInterrupt:
         print("\nExiting...")
         sys.exit(0)
