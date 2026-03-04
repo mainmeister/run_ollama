@@ -11,7 +11,7 @@ import requests
 from bs4 import BeautifulSoup
 from typing import List, Tuple, Optional
 from dotenv import load_dotenv
-from mastodon import Mastodon
+from mastodon import Mastodon, MastodonNetworkError, MastodonUnauthorizedError
 
 # Load environment variables from .env file
 load_dotenv()
@@ -217,8 +217,21 @@ def fetch_url_content(url: str) -> Optional[str]:
 
         # Truncate content to avoid overwhelming the model
         return text[:8000]
-    except Exception as e:
-        print(f"Error fetching URL: {e}")
+    except requests.exceptions.Timeout:
+        print(f"Error: Connection timed out while fetching: {url}")
+        return None
+    except requests.exceptions.ConnectionError:
+        print(f"Error: Could not connect to host at: {url}")
+        return None
+    except requests.exceptions.HTTPError as e:
+        status_code = e.response.status_code if e.response is not None else "Unknown"
+        print(f"Error: Server returned an error ({status_code}) for URL: {url}")
+        return None
+    except requests.exceptions.RequestException:
+        print(f"Error: An unexpected networking error occurred while fetching: {url}")
+        return None
+    except Exception:
+        print(f"Error: An unexpected error occurred while processing content from: {url}")
         return None
 
 def copy_to_clipboard(content: str, is_new: bool = False, disabled_flag: bool = False) -> None:
@@ -443,6 +456,9 @@ def run_chat(no_clipboard: bool = False):
             if confirm_post in ('', 'y'):
                 post_to_mastodon(content, source_url)
                 
+        except ollama.ResponseError as e:
+            # Use the actual error message from Ollama server, which is safe/informative
+            print(f"Chat error: {e.error}")
         except Exception:
             print("Chat error: An unexpected error occurred while processing the request.")
 
@@ -491,8 +507,10 @@ def post_to_mastodon(content: str, url: str) -> None:
 
         mastodon.status_post(status=post_text, visibility='unlisted')
         print("Successfully posted to Mastodon!")
+    except (MastodonNetworkError, MastodonUnauthorizedError):
+        print("Error: Could not reach Mastodon or authentication failed. Check your connection and credentials.")
     except Exception:
-        print("Error: Failed to post to Mastodon. Check your credentials and connection.")
+        print("Error: Failed to post to Mastodon. Please check your credentials and internet connection.")
 
 def main():
     import argparse
