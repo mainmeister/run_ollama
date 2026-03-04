@@ -433,7 +433,12 @@ def post_to_mastodon(content: str, url: str) -> None:
     access_token = os.getenv("MASTODON_ACCESS_TOKEN")
 
     if not base_url or not access_token:
-        print("Error: Mastodon credentials not found in environment variables.")
+        print("\n" + "!" * 50)
+        print("Error: Mastodon credentials (MASTODON_BASE_URL, MASTODON_ACCESS_TOKEN)")
+        print("not found in environment variables.")
+        print("Please check your .env file and refer to the README.md")
+        print("for setup instructions.")
+        print("!" * 50 + "\n")
         return
 
     try:
