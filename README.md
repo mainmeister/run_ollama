@@ -41,6 +41,7 @@ A Python-based CLI utility that acts as a personal technical journalist: it dige
     ```
     MASTODON_BASE_URL=https://your.mastodon.instance
     MASTODON_ACCESS_TOKEN=your_access_token_here
+    # Optional: OLLAMA_HOST=http://remote.host:11434
     ```
 
 4.  **Run the script:**
