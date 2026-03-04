@@ -78,8 +78,8 @@ URL_WEIGHT = 23
 SOURCE_PREFIX = "\n\nSource: "
 MAX_FETCH_BYTES = 1 * 1024 * 1024  # 1MB limit for streaming downloads
 
-def is_safe_url(url: str) -> bool:
-    """Basic SSRF protection: resolves hostname to IP and checks if it's in a private range."""
+def is_private_url(url: str) -> bool:
+    """Checks if a URL resolves to a private, loopback, or reserved IP address."""
     from urllib.parse import urlparse
     parsed = urlparse(url)
     if not parsed.hostname:
@@ -91,10 +91,7 @@ def is_safe_url(url: str) -> bool:
         ip = ipaddress.ip_address(ip_addr)
         
         # Check if IP is private, reserved, or loopback
-        if ip.is_private or ip.is_reserved or ip.is_loopback or ip.is_link_local or ip.is_multicast:
-            return False
-            
-        return True
+        return ip.is_private or ip.is_reserved or ip.is_loopback or ip.is_link_local or ip.is_multicast
     except (socket.gaierror, ValueError):
         # Could not resolve or invalid IP
         return False
@@ -145,11 +142,13 @@ def get_ollama_models() -> List[Tuple[str, str]]:
         print("Error: Could not connect to Ollama. Ensure it's running.")
         return []
 
-# Basic URL detection regex
+# Basic URL detection regex - supports domain names, localhost, and IP addresses
 URL_PATTERN = re.compile(
-    r'^(https?://)'  # http:// or https://
-    r'([a-zA-Z0-9-]+\.)+[a-zA-Z]{2,}'  # domain
-    r'(/[a-zA-Z0-9-._~:/?#\[\]@!$&\'()*+,;=]*)?$'  # path
+    r'^(https?://)'                           # http:// or https://
+    r'([a-zA-Z0-9.-]+|localhost)'             # domain, IP, or localhost
+    r'(?::\d+)?'                              # optional port
+    r'(/[a-zA-Z0-9-._~:/?#\[\]@!$&\'()*+,;=]*)?$', # path
+    re.IGNORECASE
 )
 
 def is_url(text: str) -> bool:
@@ -158,11 +157,17 @@ def is_url(text: str) -> bool:
 
 def fetch_url_content(url: str) -> Optional[str]:
     """Fetches and extracts text content from a webpage.
-    Includes basic SSRF protection and download size limits.
+    Includes warning for private IPs and strict download size limits.
     """
-    if not is_safe_url(url):
-        print(f"Error: URL points to a restricted or invalid IP address.")
-        return None
+    if is_private_url(url):
+        print("\n" + "!" * 50)
+        print("SECURITY WARNING: URL points to a local or private IP.")
+        print(f"Target: {url}")
+        print("Scraped content from your internal network will be sent to the LLM.")
+        print("!" * 50)
+        confirm = input("Proceed anyway? (y/N): ").strip().lower()
+        if confirm != 'y':
+            return None
 
     try:
         headers = {
@@ -179,18 +184,25 @@ def fetch_url_content(url: str) -> Optional[str]:
             print(f"Error: URL content is too large ({humanize.naturalsize(int(cl))}).")
             return None
 
-        # Download content in chunks with a hard limit
-        content = []
-        total_size = 0
-        for chunk in response.iter_content(chunk_size=8192, decode_unicode=True):
+        # Download content in chunks with a hard limit on raw bytes
+        raw_content = bytearray()
+        total_bytes = 0
+        for chunk in response.iter_content(chunk_size=8192):
             if chunk:
-                total_size += len(chunk.encode('utf-8'))
-                if total_size > MAX_FETCH_BYTES:
+                total_bytes += len(chunk)
+                if total_bytes > MAX_FETCH_BYTES:
                     print(f"Error: URL content exceeded {humanize.naturalsize(MAX_FETCH_BYTES)} limit.")
                     return None
-                content.append(chunk)
+                raw_content.extend(chunk)
 
-        full_text = "".join(content)
+        # Decode the gathered bytes
+        # Try to use the encoding from the response, default to utf-8
+        encoding = response.encoding if response.encoding else 'utf-8'
+        try:
+            full_text = raw_content.decode(encoding, errors='replace')
+        except Exception:
+            full_text = raw_content.decode('utf-8', errors='replace')
+
         soup = BeautifulSoup(full_text, 'html.parser')
 
         # Remove irrelevant elements

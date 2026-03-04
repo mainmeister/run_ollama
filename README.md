@@ -60,7 +60,7 @@ A Python-based CLI utility that acts as a personal technical journalist: it dige
 ## Privacy & Security
 
 - **Local Processing:** Your web content and prompts are processed locally by your own Ollama instance. They are not sent to any central server (except for the final summary you choose to post to Mastodon).
-- **SSRF Protection:** The application includes built-in protection against Server-Side Request Forgery (SSRF). It resolves hostnames to IP addresses and refuses to fetch content from private, reserved, or loopback network ranges (e.g., your local router or other local services).
+- **SSRF Awareness:** The application includes built-in protection and awareness for Server-Side Request Forgery (SSRF). It resolves hostnames to IP addresses and will warn you (requiring confirmation) before fetching content from private, reserved, or loopback network ranges (e.g., your local router or local services).
 - **Download Limits:** To prevent resource exhaustion, the tool only downloads up to 1MB of content from any provided URL.
 - **Privacy Controls:** Clipboard copying is enabled by default for convenience but can be disabled via the `DISABLE_CLIPBOARD` environment variable or the `--no-clipboard` CLI flag.
 - **Environment Safety:** The application includes a built-in check to warn you if your `.env` file containing credentials is being tracked by Git, helping you avoid accidental leaks.
