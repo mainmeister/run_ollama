@@ -42,6 +42,7 @@ A Python-based CLI utility that acts as a personal technical journalist: it dige
     MASTODON_BASE_URL=https://your.mastodon.instance
     MASTODON_ACCESS_TOKEN=your_access_token_here
     # Optional: OLLAMA_HOST=http://remote.host:11434
+    # Optional: DISABLE_CLIPBOARD=true
     ```
 
 4.  **Run the script:**
@@ -58,6 +59,8 @@ A Python-based CLI utility that acts as a personal technical journalist: it dige
 ## Privacy & Security
 
 - **Local Processing:** Your web content and prompts are processed locally by your own Ollama instance. They are not sent to any central server (except for the final summary you choose to post to Mastodon).
+- **SSRF Protection:** The application includes built-in protection against Server-Side Request Forgery (SSRF). It resolves hostnames to IP addresses and refuses to fetch content from private, reserved, or loopback network ranges (e.g., your local router or other local services).
+- **Download Limits:** To prevent resource exhaustion, the tool only downloads up to 1MB of content from any provided URL.
 - **Environment Safety:** The application includes a built-in check to warn you if your `.env` file containing credentials is being tracked by Git, helping you avoid accidental leaks.
 - **Limited Access:** It's recommended to use a Mastodon access token with only `write:statuses` scope.
 

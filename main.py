@@ -2,6 +2,8 @@ import sys
 import os
 import re
 import subprocess
+import socket
+import ipaddress
 import ollama
 import humanize
 import pyperclip
@@ -74,6 +76,28 @@ Overall Tone:
 MAX_POST_LEN = 500
 URL_WEIGHT = 23
 SOURCE_PREFIX = "\n\nSource: "
+MAX_FETCH_BYTES = 1 * 1024 * 1024  # 1MB limit for streaming downloads
+
+def is_safe_url(url: str) -> bool:
+    """Basic SSRF protection: resolves hostname to IP and checks if it's in a private range."""
+    from urllib.parse import urlparse
+    parsed = urlparse(url)
+    if not parsed.hostname:
+        return False
+    
+    try:
+        # Resolve hostname to an IP address
+        ip_addr = socket.gethostbyname(parsed.hostname)
+        ip = ipaddress.ip_address(ip_addr)
+        
+        # Check if IP is private, reserved, or loopback
+        if ip.is_private or ip.is_reserved or ip.is_loopback or ip.is_link_local or ip.is_multicast:
+            return False
+            
+        return True
+    except (socket.gaierror, ValueError):
+        # Could not resolve or invalid IP
+        return False
 
 def clean_model_response(text: str) -> str:
     """Cleans model output by removing unwanted leading labels like 'TLDR:' and wrapping quotes.
@@ -127,8 +151,8 @@ def get_ollama_models() -> List[Tuple[str, str, bool]]:
             models.append((name, size, is_thinking))
             
         return models
-    except Exception as e:
-        print(f"Error connecting to Ollama: {e}")
+    except Exception:
+        print("Error: Could not connect to Ollama. Ensure it's running.")
         return []
 
 # Basic URL detection regex
@@ -143,14 +167,41 @@ def is_url(text: str) -> bool:
     return bool(URL_PATTERN.match(text))
 
 def fetch_url_content(url: str) -> Optional[str]:
-    """Fetches and extracts text content from a webpage."""
+    """Fetches and extracts text content from a webpage.
+    Includes basic SSRF protection and download size limits.
+    """
+    if not is_safe_url(url):
+        print(f"Error: URL points to a restricted or invalid IP address.")
+        return None
+
     try:
         headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
         }
-        response = requests.get(url, timeout=10, headers=headers)
+        
+        # Use stream=True to check content size during download
+        response = requests.get(url, timeout=10, headers=headers, stream=True)
         response.raise_for_status()
-        soup = BeautifulSoup(response.text, 'html.parser')
+
+        # Check content-length header if present
+        cl = response.headers.get('content-length')
+        if cl and int(cl) > MAX_FETCH_BYTES:
+            print(f"Error: URL content is too large ({humanize.naturalsize(int(cl))}).")
+            return None
+
+        # Download content in chunks with a hard limit
+        content = []
+        total_size = 0
+        for chunk in response.iter_content(chunk_size=8192, decode_unicode=True):
+            if chunk:
+                total_size += len(chunk.encode('utf-8'))
+                if total_size > MAX_FETCH_BYTES:
+                    print(f"Error: URL content exceeded {humanize.naturalsize(MAX_FETCH_BYTES)} limit.")
+                    return None
+                content.append(chunk)
+
+        full_text = "".join(content)
+        soup = BeautifulSoup(full_text, 'html.parser')
 
         # Remove irrelevant elements
         for element in soup(["script", "style", "nav", "footer", "header", "aside"]):
@@ -282,11 +333,14 @@ def run_chat():
             # Since it was streamed, we don't need to print the whole thing again
             # but we can notify about the clipboard.
             
-            try:
-                pyperclip.copy(content)
-                print("(Response copied to clipboard)")
-            except Exception:
-                print("(Warning: Could not copy to clipboard)")
+            if os.getenv("DISABLE_CLIPBOARD", "").lower() not in ("true", "1", "yes"):
+                try:
+                    pyperclip.copy(content)
+                    print("(Response copied to clipboard)")
+                except Exception:
+                    print("(Warning: Could not copy to clipboard)")
+            else:
+                print("(Clipboard copy disabled via environment)")
 
             # Mastodon Posting Logic
             if not source_url:
@@ -351,11 +405,12 @@ def run_chat():
                         
                         # No need to print "New Response:" again as it was streamed
                         
-                        try:
-                            pyperclip.copy(content)
-                            print("(New response copied to clipboard)")
-                        except Exception:
-                            pass
+                        if os.getenv("DISABLE_CLIPBOARD", "").lower() not in ("true", "1", "yes"):
+                            try:
+                                pyperclip.copy(content)
+                                print("(New response copied to clipboard)")
+                            except Exception:
+                                pass
                             
                         # Continue to next iteration to re-check length
                         continue
@@ -369,8 +424,8 @@ def run_chat():
             if confirm_post in ('', 'y'):
                 post_to_mastodon(content, source_url)
                 
-        except Exception as e:
-            print(f"Chat error: {e}")
+        except Exception:
+            print("Chat error: An unexpected error occurred while processing the request.")
 
 def post_to_mastodon(content: str, url: str) -> None:
     """Posts the model response and source URL to Mastodon."""
@@ -407,8 +462,8 @@ def post_to_mastodon(content: str, url: str) -> None:
 
         mastodon.status_post(status=post_text, visibility='unlisted')
         print("Successfully posted to Mastodon!")
-    except Exception as e:
-        print(f"Failed to post to Mastodon: {e}")
+    except Exception:
+        print("Error: Failed to post to Mastodon. Check your credentials and connection.")
 
 if __name__ == "__main__":
     try:
