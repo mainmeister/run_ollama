@@ -127,7 +127,7 @@ def clean_model_response(text: str) -> str:
 
     return s
 
-def get_ollama_models() -> List[Tuple[str, str, bool]]:
+def get_ollama_models() -> List[Tuple[str, str]]:
     """Fetches and sorts available Ollama models by size."""
     try:
         response = ollama.list()
@@ -138,17 +138,7 @@ def get_ollama_models() -> List[Tuple[str, str, bool]]:
         for m in sorted_models:
             name = m.get('model', 'Unknown')
             size = humanize.intword(m.get('size', 0))
-            
-            # Check for thinking capability
-            try:
-                info = ollama.show(name)
-                # Capabilities might be in show() response for newer Ollama versions
-                capabilities = getattr(info, 'capabilities', [])
-                is_thinking = 'thinking' in (capabilities or [])
-            except Exception:
-                is_thinking = False
-                
-            models.append((name, size, is_thinking))
+            models.append((name, size))
             
         return models
     except Exception:
@@ -238,37 +228,46 @@ def copy_to_clipboard(content: str, is_new: bool = False, disabled_flag: bool = 
 
 def run_chat(no_clipboard: bool = False):
     """Main application loop."""
-    models = get_ollama_models()
-    
-    if not models:
-        print("No models found. Ensure Ollama is running.")
-        return
-
-    # Start with the largest model as the default.
-    # Models are sorted by size (smallest to largest), so the last one is the largest.
-    default_index = len(models) - 1
-
-    # Determine column widths based on the largest items in each column
-    name_width = max((len(n) for n, _, _ in models), default=0)
-    size_width = max((len(s) for _, s, _ in models), default=0)
-    think_width = 8 # "Thinking" is 8 characters.
-    # Header/separator line width: fixed prefixes + column widths
-    line_width = 32 + name_width + size_width + think_width
+    # Initialize default index
+    default_index = 0
+    first_run = True
 
     while True:
+        models = get_ollama_models()
+        if not models:
+            print("No models found. Ensure Ollama is running.")
+            return
+
+        # Set default to the largest model on first run
+        if first_run:
+            default_index = len(models) - 1
+            first_run = False
+        
+        # Ensure default_index is still valid if models changed
+        if default_index >= len(models):
+            default_index = len(models) - 1
+
+        # Determine column widths
+        name_width = max((len(n) for n, _ in models), default=0)
+        size_width = max((len(s) for _, s in models), default=0)
+        line_width = 22 + name_width + size_width
+
         print("\n" + "-" * line_width)
         print("Available Models:")
         print("-" * line_width)
-        for i, (name, size, is_thinking) in enumerate(models):
-            think_str = "Yes" if is_thinking else "No"
-            print(f"{i:2d}. Model: {name:<{name_width}} | Size: {size:>{size_width}} | Thinking: {think_str:<{think_width}}")
+        for i, (name, size) in enumerate(models):
+            print(f"{i:2d}. Model: {name:<{name_width}} | Size: {size:>{size_width}}")
         print("-" * line_width)
 
-        choice = input(f"Select model index [Default: {default_index}] (or 'q' to quit): ").strip().lower()
+        choice = input(f"Select model index [Default: {default_index}] (or 'q' to quit, 'r' to refresh): ").strip().lower()
         
         if choice == 'q':
             print("Goodbye!")
             break
+        
+        if choice == 'r':
+            print("Refreshing model list...")
+            continue
 
         if choice == '':
             idx = default_index
@@ -280,7 +279,7 @@ def run_chat(no_clipboard: bool = False):
                 print(f"Invalid selection. Choose 0-{len(models)-1}.")
                 continue
         else:
-            print("Please enter a valid number, press Enter for default, or 'q' to quit.")
+            print("Please enter a valid number, press Enter for default, 'r' to refresh, or 'q' to quit.")
             continue
 
         selected_model = models[idx][0]
@@ -473,7 +472,7 @@ def post_to_mastodon(content: str, url: str) -> None:
     except Exception:
         print("Error: Failed to post to Mastodon. Check your credentials and connection.")
 
-if __name__ == "__main__":
+def main():
     import argparse
     parser = argparse.ArgumentParser(description="run_ollama: A personal technical journalist for web content.")
     parser.add_argument("--no-clipboard", action="store_true", help="Disable automatic clipboard copying.")
@@ -484,3 +483,6 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         print("\nExiting...")
         sys.exit(0)
+
+if __name__ == "__main__":
+    main()
