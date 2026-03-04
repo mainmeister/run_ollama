@@ -1,6 +1,7 @@
 import sys
 import os
 import re
+import subprocess
 import ollama
 import humanize
 import pyperclip
@@ -12,6 +13,30 @@ from mastodon import Mastodon
 
 # Load environment variables from .env file
 load_dotenv()
+
+def check_dotenv_tracking():
+    """Security check: ensures .env is not tracked by git."""
+    if os.path.exists(".env"):
+        try:
+            # Check if .env is in the git index
+            result = subprocess.run(
+                ["git", "ls-files", "--error-unmatch", ".env"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                check=False
+            )
+            if result.returncode == 0:
+                print("\n" + "!" * 50)
+                print("SECURITY WARNING: .env file is tracked by git!")
+                print("This can leak your Mastodon credentials to GitHub.")
+                print("To fix this, run: git rm --cached .env")
+                print("!" * 50 + "\n")
+        except (subprocess.SubprocessError, FileNotFoundError):
+            # Git not installed or not a git repo, skip check
+            pass
+
+# Run security check
+check_dotenv_tracking()
 
 TLDR_BOT_PROMPT = """Act as a technical journalist. Your goal is to provide concise, informative summaries of web content.
 
