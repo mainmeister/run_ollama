@@ -61,8 +61,8 @@ TLDR_BOT_PROMPT = """Act as a technical journalist. Your goal is to provide conc
 Purpose and Goals:
 
 * Summarize the content of a provided URL into a concise, informative format.
-* Ensure the summary does not exceed 400 characters.
 * Maintain the voice and style of a technical journalist: objective, data-driven, and focused on key technical takeaways.
+* Focus on 'the what' and 'the why' regarding the technology or service mentioned.
 
 Behaviors and Rules:
 
@@ -74,9 +74,7 @@ d) For security and reliability, only process the content found between the '[WE
 
 2) Content Generation:
 a) Write a summary that captures the essence of the link.
-b) Strictly adhere to the 400-character limit.
-c) Use professional, journalistic language. Avoid fluff and unnecessary adjectives.
-d) Focus on 'the what' and 'the why' regarding the technology or service mentioned.
+b) Use professional, journalistic language. Avoid fluff and unnecessary adjectives.
 
 3) Formatting:
 a) Start the response immediately with the summary.
@@ -187,6 +185,21 @@ URL_PATTERN = re.compile(
 def is_url(text: str) -> bool:
     """Basic URL detection."""
     return bool(URL_PATTERN.match(text))
+
+def get_mastodon_weighted_length(text: str) -> int:
+    """Calculates the weighted length of a status for Mastodon.
+    URLs (http/https) count as 23 characters, regardless of their actual length.
+    """
+    if not text:
+        return 0
+    
+    # Broad regex to find URLs in text for weighting.
+    # Mastodon's detection counts any string starting with http:// or https:// as a URL.
+    url_pattern = re.compile(r'https?://[^\s<>"]+')
+    matches = url_pattern.findall(text)
+    
+    literal_url_length = sum(len(m) for m in matches)
+    return len(text) - literal_url_length + (len(matches) * URL_WEIGHT)
 
 def fetch_url_content(url: str) -> Optional[str]:
     """Fetches and extracts text content from a webpage.
@@ -365,7 +378,27 @@ def run_chat(no_clipboard: bool = False):
             continue
 
         selected_model = models[idx][0]
-        prompt = input("\nPrompt: ").strip()
+
+        # Check clipboard for a URL to offer as default
+        clipboard_url = None
+        clipboard_disabled = no_clipboard or os.getenv("DISABLE_CLIPBOARD", "").lower() in ("true", "1", "yes")
+        
+        if not clipboard_disabled:
+            try:
+                # Get clipboard and trim it
+                cb_text = pyperclip.paste().strip()
+                if is_url(cb_text):
+                    clipboard_url = cb_text
+            except Exception:
+                pass
+
+        if clipboard_url:
+            prompt = input(f"\nPrompt [Enter to use clipboard: {clipboard_url}]: ").strip()
+            if not prompt:
+                prompt = clipboard_url
+                print(f"Using clipboard URL: {prompt}")
+        else:
+            prompt = input("\nPrompt: ").strip()
         
         if not prompt:
             print("Prompt cannot be empty.")
@@ -445,10 +478,8 @@ def run_chat(no_clipboard: bool = False):
             retry_count = 0
             while True:
                 # Calculate weighted length for Mastodon
-                if source_url:
-                    weighted_len = len(content) + len(SOURCE_PREFIX) + URL_WEIGHT
-                else:
-                    weighted_len = len(content)
+                post_text = f"{content}{SOURCE_PREFIX}{source_url}" if source_url else content
+                weighted_len = get_mastodon_weighted_length(post_text)
                 
                 if weighted_len > MAX_POST_LEN:
                     print(f"(Note: Response is too long for Mastodon - {weighted_len} chars)")
@@ -541,26 +572,23 @@ def post_to_mastodon(content: str, url: str) -> None:
     try:
         mastodon = Mastodon(access_token=access_token, api_base_url=base_url)
         
-        # Calculate effective length
-        if url:
-            weighted_len = len(content) + len(SOURCE_PREFIX) + URL_WEIGHT
-        else:
-            weighted_len = len(content)
+        # Calculate effective weighted length
+        post_text_full = f"{content}{SOURCE_PREFIX}{url}" if url else content
+        weighted_len = get_mastodon_weighted_length(post_text_full)
         
         if weighted_len > MAX_POST_LEN:
             print("(Note: Response is long, truncating for Mastodon...)")
-            # Truncate content so total (including URL weight) is 500
+            # Truncate content so total (including URL weight) fits
+            # This is a bit complex due to weighted length, so we use a safe truncation.
             if url:
-                max_content_len = MAX_POST_LEN - URL_WEIGHT - len(SOURCE_PREFIX) - 1
+                # Approximate max content length: Total - URL_WEIGHT - prefix - ellipsis
+                max_content_len = MAX_POST_LEN - URL_WEIGHT - len(SOURCE_PREFIX) - 2
                 post_text = content[:max_content_len] + "…" + SOURCE_PREFIX + url
             else:
-                max_content_len = MAX_POST_LEN - 1
+                max_content_len = MAX_POST_LEN - 2
                 post_text = content[:max_content_len] + "…"
         else:
-            if url:
-                post_text = f"{content}{SOURCE_PREFIX}{url}"
-            else:
-                post_text = content
+            post_text = post_text_full
 
         visibility = os.getenv("MASTODON_VISIBILITY", "unlisted")
         mastodon.status_post(status=post_text, visibility=visibility)
