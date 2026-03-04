@@ -22,7 +22,7 @@ A Python-based CLI utility that acts as a personal technical journalist: it dige
 
 1.  **Clone the repository:**
     ```bash
-    git clone https://github.com/yourusername/run_ollama.git
+    git clone https://github.com/mainmeister/run_ollama.git
     cd run_ollama
     ```
 
@@ -53,6 +53,12 @@ A Python-based CLI utility that acts as a personal technical journalist: it dige
 - Select a model from the list of available Ollama models.
 - Enter a URL to summarize it or enter a direct prompt for general chat.
 - Confirm if you want to post the summary to Mastodon.
+
+## Privacy & Security
+
+- **Local Processing:** Your web content and prompts are processed locally by your own Ollama instance. They are not sent to any central server (except for the final summary you choose to post to Mastodon).
+- **Environment Safety:** The application includes a built-in check to warn you if your `.env` file containing credentials is being tracked by Git, helping you avoid accidental leaks.
+- **Limited Access:** It's recommended to use a Mastodon access token with only `write:statuses` scope.
 
 ## License
 
