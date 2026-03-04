@@ -65,6 +65,7 @@ A Python-based CLI utility that acts as a personal technical journalist: it dige
 - **Privacy Controls:** Clipboard copying is enabled by default for convenience but can be disabled via the `DISABLE_CLIPBOARD` environment variable or the `--no-clipboard` CLI flag.
 - **Environment Safety:** The application includes a built-in check to warn you if your `.env` file containing credentials is being tracked by Git, helping you avoid accidental leaks.
 - **Limited Access:** It's recommended to use a Mastodon access token with only `write:statuses` scope.
+- **Dependency Security:** The project uses pinned dependency versions and is regularly audited for known vulnerabilities (e.g., via `pip-audit`) to ensure a secure and stable environment for the user.
 
 ## License
 

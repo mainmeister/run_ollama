@@ -371,13 +371,13 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
-    { name = "beautifulsoup4", specifier = ">=4.14.3" },
-    { name = "humanize", specifier = ">=4.15.0" },
-    { name = "mastodon-py", specifier = ">=1.8.1" },
-    { name = "ollama", specifier = ">=0.6.1" },
-    { name = "pyperclip", specifier = ">=1.11.0" },
-    { name = "python-dotenv", specifier = ">=1.0.1" },
-    { name = "requests", specifier = ">=2.32.5" },
+    { name = "beautifulsoup4", specifier = "==4.14.3" },
+    { name = "humanize", specifier = "==4.15.0" },
+    { name = "mastodon-py", specifier = "==2.1.4" },
+    { name = "ollama", specifier = "==0.6.1" },
+    { name = "pyperclip", specifier = "==1.11.0" },
+    { name = "python-dotenv", specifier = "==1.2.1" },
+    { name = "requests", specifier = "==2.32.5" },
 ]
 
 [[package]]
