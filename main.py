@@ -364,7 +364,12 @@ def run_chat(no_clipboard: bool = False):
 
             # Mastodon Posting Logic
             if not source_url:
-                source_url = input("Enter source URL (optional, press Enter to skip): ").strip()
+                temp_url = input("Enter source URL (optional, press Enter to skip): ").strip()
+                if temp_url:
+                    if is_url(temp_url):
+                        source_url = temp_url
+                    else:
+                        print("Invalid URL format. Skipping source attribution.")
             
             # Shortening loop: retry 10 times automatically, then ask user.
             retry_count = 0
@@ -443,6 +448,11 @@ def run_chat(no_clipboard: bool = False):
 
 def post_to_mastodon(content: str, url: str) -> None:
     """Posts the model response and source URL to Mastodon."""
+    # Security: Ensure URL is valid and sanitized before posting
+    if url and not is_url(url):
+        print("Warning: Invalid source URL detected. Posting without source attribution.")
+        url = None
+
     base_url = os.getenv("MASTODON_BASE_URL")
     access_token = os.getenv("MASTODON_ACCESS_TOKEN")
 
